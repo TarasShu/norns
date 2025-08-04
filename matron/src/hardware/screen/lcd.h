@@ -18,14 +18,18 @@
 #define SPIDEV_0_0_PATH "/dev/spidev0.0"
 #define SPI0_BUS_WIDTH 8
 
-// GPIO Configuration
+// GPIO Configuration for Pico-LCD-1.14
 #define LCD_DC_AND_RESET_GPIO_CHIP "gpiochip0"
-#define LCD_DC_GPIO_LINE 25  // DC pin
-#define LCD_RESET_GPIO_LINE 27  // RST pin
-#define LCD_BL_GPIO_LINE 18  // Backlight pin
-#define LCD_CS_GPIO_LINE 8   // Chip Select pin
+#define LCD_DC_GPIO_LINE 15  // DC pin (D/CX)
+#define LCD_RESET_GPIO_LINE 14  // RST pin (RESX)
+#define LCD_BL_GPIO_LINE 13  // Backlight pin
+#define LCD_CS_GPIO_LINE 17   // Chip Select pin (CSX)
 
-// Display dimensions
+// SPI Configuration for Pico-LCD-1.14
+#define LCD_SPI_MOSI_GPIO_LINE 19  // SPI MOSI (SDA)
+#define LCD_SPI_SCK_GPIO_LINE 18   // SPI Clock (SCL)
+
+// Display dimensions for Pico-LCD-1.14
 #define LCD_WIDTH 240
 #define LCD_HEIGHT 135
 

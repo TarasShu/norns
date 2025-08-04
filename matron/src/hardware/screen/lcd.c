@@ -1,6 +1,11 @@
 #include "lcd.h"
 
 #include <string.h>
+#include <stdarg.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <time.h>
+#include <sched.h>
 
 #include "events.h"
 #include "event_types.h"
@@ -23,10 +28,10 @@ static pthread_t lcd_pthread_t;
 #define SURFACE_BUFFER_LEN LCD_WIDTH * LCD_HEIGHT * sizeof(uint32_t)
 
 int open_spi() {
-    uint8_t mode = SPI_MODE_0;
+    uint8_t mode = SPI_MODE_0; // CPOL=0, CPHA=0 for ST7789
     uint8_t bits_per_word = SPI0_BUS_WIDTH;
     uint8_t little_endian = 0;
-    uint32_t speed_hz = 1200000000 / 64; // 18.75Mhz
+    uint32_t speed_hz = 80000000; // 80MHz for ST7789 on Pico-LCD-1.14
 
     int fd = open(SPIDEV_0_0_PATH, O_RDWR | O_SYNC);
 
@@ -159,7 +164,7 @@ void lcd_init() {
         return;
     }
 
-    spidev_fd = open_spi(SPIDEV_0_0_PATH);
+    spidev_fd = open_spi();
     if( spidev_fd < 0 ){
         fprintf(stderr, "%s: couldn't open %s.\n", __func__, SPIDEV_0_0_PATH);
         return;
@@ -184,31 +189,57 @@ void lcd_init() {
     gpiod_line_set_value(gpio_reset, 1);
     usleep(100000);
 
-    // Initialize display
+    // ST7789 Initialization sequence for Pico-LCD-1.14
     write_command(LCD_SWRESET);
-    usleep(120000);
+    usleep(150000);
 
-    // Set color mode to 16-bit per pixel
+    write_command(LCD_SLPOUT);
+    usleep(500000);
+
+    // Set color mode to 16-bit per pixel (RGB565)
     write_command_with_data(LCD_COLMOD, 0x05);
 
-    // Set frame rate control
-    write_command_with_data(LCD_FRMCTR1, 0x00, 0x18);
+    // Memory Data Access Control (MADCTL)
+    write_command_with_data(LCD_MADCTL, 0x00);
 
-    // Set power control
-    write_command_with_data(LCD_PWCTR1, 0x23);
-    write_command_with_data(LCD_PWCTR2, 0x10);
-    write_command_with_data(LCD_VMCTR1, 0x3E, 0x28);
+    // Column Address Set (0 to 239)
+    write_command_with_data(LCD_CASET, 0x00, 0x00, 0x00, 0xEF);
 
-    // Set display enhancement
-    write_command_with_data(LCD_DISSET5, 0x00, 0x00);
+    // Row Address Set (0 to 134)  
+    write_command_with_data(LCD_RASET, 0x00, 0x00, 0x00, 0x86);
 
-    // Set gamma correction
-    write_command_with_data(LCD_GMCTRP1, 0x0F, 0x1A, 0x0F, 0x18, 0x2F, 0x28, 0x20, 0x22, 0x1F, 0x1B, 0x23, 0x37, 0x00, 0x07, 0x02, 0x10);
-    write_command_with_data(LCD_GMCTRN1, 0x0F, 0x1B, 0x0F, 0x17, 0x33, 0x2C, 0x29, 0x2E, 0x30, 0x30, 0x39, 0x3F, 0x00, 0x07, 0x03, 0x10);
+    // Porch Setting
+    write_command_with_data(0xB2, 0x0C, 0x0C, 0x00, 0x33, 0x33);
 
-    // Set display mode
-    write_command(LCD_MADCTL);
-    write_command_with_data(LCD_MADCTL, 0x48); // Row/Column order
+    // Gate Control
+    write_command_with_data(0xB7, 0x35);
+
+    // VCOM Setting
+    write_command_with_data(0xBB, 0x19);
+
+    // LCM Control
+    write_command_with_data(0xC0, 0x2C);
+
+    // VDV and VRH Command Enable
+    write_command_with_data(0xC2, 0x01);
+
+    // VRH Set
+    write_command_with_data(0xC3, 0x12);
+
+    // VDV Set
+    write_command_with_data(0xC4, 0x20);
+
+    // Frame Rate Control in Normal Mode
+    write_command_with_data(0xC6, 0x0F);
+
+    // Power Control 1
+    write_command_with_data(0xD0, 0xA4, 0xA1);
+
+    // Positive Voltage Gamma Control
+    write_command_with_data(0xE0, 0xD0, 0x04, 0x0D, 0x11, 0x13, 0x2B, 0x3F, 0x54, 0x4C, 0x18, 0x0D, 0x0B, 0x1F, 0x23);
+
+    // Negative Voltage Gamma Control
+    write_command_with_data(0xE1, 0xD0, 0x04, 0x0C, 0x11, 0x13, 0x2C, 0x3F, 0x44, 0x51, 0x2F, 0x1F, 0x1F, 0x20, 0x23);
 
     // Turn on display
     write_command(LCD_SLPOUT);
@@ -301,9 +332,9 @@ void lcd_refresh() {
         return;
     }
 
-    // Set column and row addresses
-    write_command_with_data(LCD_CASET, 0, 0, (LCD_WIDTH >> 8) & 0xFF, LCD_WIDTH & 0xFF);
-    write_command_with_data(LCD_RASET, 0, 0, (LCD_HEIGHT >> 8) & 0xFF, LCD_HEIGHT & 0xFF);
+    // Set column and row addresses for 240x135 display
+    write_command_with_data(LCD_CASET, 0x00, 0x00, 0x00, 0xEF); // 0-239
+    write_command_with_data(LCD_RASET, 0x00, 0x00, 0x00, 0x86); // 0-134
     write_command(LCD_RAMWR);
 
     pthread_mutex_lock(&lock);
